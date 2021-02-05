@@ -192,23 +192,6 @@ install_components() {
     cd -
     return 0
 }
-######################################################################
-##### Retrieve Service Account Credentials from Secrets Manager   ####
-######################################################################
-get_servicecreds() {
-    SECRET_ID="${SECRET_ID_PREFIX}/$DIRECTORY_ID/seamless-domain-join"
-    secret=$(/usr/local/bin/aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region $REGION 2>/dev/null)
-    DOMAIN_USERNAME=$(echo $secret |  python -c 'import sys, json; obj=json.load(sys.stdin); print(obj["SecretString"])' | python -c 'import json,sys; obj=json.load(sys.stdin); print(obj["awsSeamlessDomainUsername"])')
-    if [ $? -ne 0 ]; then
-        echo "***Failed: Cannot find awsSeamlessDomainUsername in $SECRET_ID in Secrets Manager"
-        exit 1
-    fi
-    DOMAIN_PASSWORD=$(echo $secret |  python -c 'import sys, json; obj=json.load(sys.stdin); print(obj["SecretString"])' | python -c 'import json,sys; obj=json.load(sys.stdin); print(obj["awsSeamlessDomainPassword"])')
-    if [ $? -ne 0 ]; then
-        echo "***Failed: aws secretsmanager get-secret-value --secret-id $SECRET_ID --region $REGION"
-        exit 1
-    fi
-}
 ####################################################
 #### Retrieve Service Account Credentials and ######
 #### other parameters from Secrets Manager    ######
@@ -379,11 +362,10 @@ is_directory_reachable() {
 ## Join Linux instance to AWS Directory Service ##
 ##################################################
 do_domainjoin() {
-    echo "Attempting Domain Join"
     MAX_RETRIES=10
     for i in $(seq 1 $MAX_RETRIES)
     do
-	echo "Attempt $i"
+	echo "[$i] Attempting to join domain"
         if [ -z "$DIRECTORY_OU" ]; then
             LOG_MSG=$(echo $DOMAIN_PASSWORD | realm join --client-software=sssd -U ${DOMAIN_USERNAME}@${DIRECTORY_NAME} "$DIRECTORY_NAME" -v 2>&1)
         else
@@ -453,99 +435,41 @@ config_docker(){
 	echo "Configuring Docker for group $ADDOCKERGROUP"
 	# Get GID of Docker Group in AD
 	DOCKERGID=$(getent group docker | cut -f3 -d:)
-	ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
-	ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
-	echo "Local Docker GID = $DOCKERGID"
-	echo "AD Docker GID = $ADDOCKERGID"
-	if [ -z $ADDOCKERGID ]
-	then
-		echo "Could not get GID for docker from AD"
-	else
-		echo "Setting docker GID to $ADDOCKERGID"
-		# Stop SSSD to allow groupmod to set GID to match
-                echo "Stopping SSSD and invalidating cache to allow GID match"
-		systemctl stop sssd.service
-                sss_cache -E
-		groupmod -g $ADDOCKERGID docker
-                chgrp docker /var/run/docker.sock
-		systemctl enable docker.service
-		systemctl start sssd.service
-		systemctl start docker.service
-	fi
+	MAX_RETRIES=5
+	DOCKERSOCK=/var/run/docker.sock
+        for i in $(seq 1 $MAX_RETRIES)
+	do
+		ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
+		STATUS=$?
+		echo "[$i] Attempting to get Docker GID from AD"
+		if [ $? -eq 0 ]
+		then
+			echo "Local Docker GID = $DOCKERGID"
+			echo "AD Docker GID = $ADDOCKERGID"
+			echo "Setting docker GID to $ADDOCKERGID"
+			# Stop SSSD to allow groupmod to set GID to match
+			echo "Stopping SSSD and invalidating cache to allow GID match"
+			systemctl stop sssd.service > /dev/null  2>&1
+			sss_cache -E
+			groupmod -g $ADDOCKERGID docker
+			if [ -f /var/run/docker.sock ]
+			then
+				chgrp docker /var/run/docker.sock
+			fi
+			systemctl enable docker.service > /dev/null  2>&1
+			systemctl start sssd.service > /dev/null  2>&1
+			systemctl start docker.service > /dev/null  2>&1
+		fi
+		if [ -z $ADDOCKERGID ]
+		then
+			echo "Failed to configure Docker for AD users"
+		fi
+        done
 }
 ##################################################
 ## Main entry point ##############################
 ##################################################
 CURTIME=$(date | sed 's/ //g')
-#if [ $# -eq 0 ]; then
-#    exit 1
-#fi
-for i in "$@"; do
-    case "$i" in
-        --directory-id)
-            shift
-            DIRECTORY_ID="$1"
-            continue
-            ;;
-        --directory-name)
-            shift;
-            DIRECTORY_NAME="$1"
-            continue
-            ;;
-        --directory-ou)
-            shift;
-            DIRECTORY_OU="$1"
-            continue
-            ;;
-        --instance-region)
-            shift;
-            REGION="$1"
-            continue
-            ;;
-        --dns-addresses)
-            shift;
-            DNS_ADDRESSES="$1"
-            DNS_IP_ADDRESS1=$(echo $DNS_ADDRESSES | awk -F',' '{ print $1 }')
-            DNS_IP_ADDRESS2=$(echo $DNS_ADDRESSES | awk -F',' '{ print $2 }')
-            if [ ! -z $DNS_IP_ADDRESS1 ]; then
-                is_dns_ip_reachable $DNS_IP_ADDRESS1
-                if [ $? -ne 0 ]; then
-                    echo "**Failed: Unable to reach DNS server $DNS_IP_ADDRESS1"
-                    exit 1
-                fi
-            fi
-            if [ ! -z $DNS_IP_ADDRESS2 ]; then
-                is_dns_ip_reachable $DNS_IP_ADDRESS2
-                if [ $? -ne 0 ]; then
-                    echo "**Failed: Unable to reach DNS server $DNS_IP_ADDRESS2"
-                    exit 1
-                fi
-            fi
-            continue
-            ;;
-        --proxy-address)
-            shift;
-            PROXY_ADDRESS="$1"
-            continue
-            ;;
-        --no-proxy)
-            shift;
-            NO_PROXY="$1"
-            continue
-            ;;
-        --efsserver)
-	    shift;
-	    EFSSERVER="$1"
-	    continue
-	    ;;
-        --dockergroup)
-	    shift;
-	    ADDOCKERGROUP="$1"
-	    continue
-	    ;;
-    esac
-    shift
-done
 if [ -z $REGION ]; then
     get_region
 fi
@@ -590,7 +514,6 @@ print_vars
 is_directory_reachable
 if [ $? -eq 0 ]; then
     config_nsswitch
-    #get_servicecreds
     do_domainjoin
     config_sssd
     if [ -z $EFSSERVER ]
