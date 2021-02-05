@@ -77,7 +77,7 @@ install_components() {
         LINUX_DISTRO='CentOS'
         # yum -y update
         ## yum update takes too long
-        yum -y install realmd adcli oddjob-mkhomedir oddjob sssd samba-common-tools autofs docker krb5-workstation unzip >/dev/null
+        yum -y install jq realmd adcli oddjob-mkhomedir oddjob sssd samba-common-tools autofs docker krb5-workstation unzip >/dev/null
         if [ $? -ne 0 ]; then echo "install_components(): yum install errors for CentOS" && return 1; fi
     elif grep -e 'Red Hat' /etc/os-release 1>/dev/null 2>/dev/null; then
         LINUX_DISTRO='RHEL'
@@ -96,7 +96,7 @@ install_components() {
         # yum -y update
         ## yum update takes too long
         # https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html-single/deploying_different_types_of_servers/index
-        yum -y  install realmd adcli oddjob-mkhomedir oddjob sssd samba-common-tools autofs docker krb5-workstation python3 vim unzip >/dev/null
+        yum -y  install jq realmd adcli oddjob-mkhomedir oddjob sssd samba-common-tools autofs docker krb5-workstation python3 vim unzip >/dev/null
         alias python=python3
         if [ $? -ne 0 ]; then echo "install_components(): yum install errors for Red Hat" && return 1; fi
         systemctl restart dbus
@@ -104,7 +104,7 @@ install_components() {
         LINUX_DISTRO='Fedora'
         ## yum update takes too long, but it is unavoidable here.
         yum -y update
-        yum -y  install realmd adcli oddjob-mkhomedir oddjob sssd samba-common-tools autofs docker krb5-workstation python3 vim unzip >/dev/null
+        yum -y  install jq realmd adcli oddjob-mkhomedir oddjob sssd samba-common-tools autofs docker krb5-workstation python3 vim unzip >/dev/null
         alias python=python3
         if [ $? -ne 0 ]; then echo "install_components(): yum install errors for Fedora" && return 1; fi
         systemctl restart dbus
@@ -112,7 +112,7 @@ install_components() {
          LINUX_DISTRO='AMAZON_LINUX'
          # yum -y update
          ## yum update takes too long
-         yum -y  install realmd adcli oddjob-mkhomedir oddjob sssd samba-common-tools autofs docker krb5-workstation unzip  >/dev/null
+         yum -y  install jq realmd adcli oddjob-mkhomedir oddjob sssd samba-common-tools autofs docker krb5-workstation unzip  >/dev/null
          if [ $? -ne 0 ]; then echo "install_components(): yum install errors for Amazon Linux" && return 1; fi
     elif grep 'Ubuntu' /etc/os-release 1>/dev/null 2>/dev/null; then
          LINUX_DISTRO='UBUNTU'
@@ -127,7 +127,7 @@ install_components() {
          export DEBIAN_FRONTEND=noninteractive
          apt-get -y update
          if [ $? -ne 0 ]; then echo "install_components(): apt-get update errors for Ubuntu" && return 1; fi
-         apt-get -yq install realmd adcli winbind samba libnss-winbind libpam-winbind libpam-krb5 krb5-config krb5-locales krb5-user packagekit  ntp unzip python > /dev/null
+         apt-get -yq install jq realmd adcli winbind samba libnss-winbind libpam-winbind libpam-krb5 krb5-config krb5-locales krb5-user packagekit  ntp unzip python > /dev/null
          if [ $? -ne 0 ]; then echo "install_components(): apt-get install errors for Ubuntu" && return 1; fi
          # Disable Reverse DNS resolution. Ubuntu Instances must be reverse-resolvable in DNS before the realm will work.
          sed -i "s/default_realm.*$/default_realm = $REALM\n\trdns = false/g" /etc/krb5.conf
@@ -147,7 +147,7 @@ install_components() {
          fi
          LINUX_DISTRO='SUSE'
          sudo zypper update -y
-         sudo zypper -n install realmd adcli sssd sssd-tools sssd-ad samba-client krb5-client samba-winbind krb5-client python
+         sudo zypper -n install jq realmd adcli sssd sssd-tools sssd-ad samba-client krb5-client samba-winbind krb5-client python
          if [ $? -ne 0 ]; then
             return 1
          fi
@@ -161,7 +161,7 @@ install_components() {
          fi
          apt-get -y update
          LINUX_DISTRO='DEBIAN'
-         DEBIAN_FRONTEND=noninteractive apt-get -yq install realmd adcli winbind samba libnss-winbind libpam-winbind libpam-krb5 krb5-config krb5-locales krb5-user packagekit  ntp unzip > /dev/null
+         DEBIAN_FRONTEND=noninteractive apt-get -yq install jq realmd adcli winbind samba libnss-winbind libpam-winbind libpam-krb5 krb5-config krb5-locales krb5-user packagekit  ntp unzip > /dev/null
          if [ $? -ne 0 ]; then
             return 1
          fi
@@ -208,6 +208,23 @@ get_servicecreds() {
         echo "***Failed: aws secretsmanager get-secret-value --secret-id $SECRET_ID --region $REGION"
         exit 1
     fi
+}
+####################################################
+#### Retrieve Service Account Credentials and ######
+#### other parameters from Secrets Manager    ######
+####################################################
+get_serviceparams() {
+    SECRET_ID="ec2/linux/domainJoin"
+    secret=$(/usr/local/bin/aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region $REGION \
+              --query SecretString --output text 2>/dev/null)
+    echo "printing secret"
+    DOMAIN_USERNAME=$(echo $secret | jq -r '."directory-join-user"')
+    DOMAIN_PASSWORD=$(echo $secret | jq -r '."directory-join-password"')
+    DIRECTORY_NAME=$(echo $secret | jq -r '."directory-name"')
+    DIRECTORY_ID=$(echo $secret | jq -r '."directory-id"')
+    DIRECTORY_OU=$(echo $secret | jq -r '."directory-ou"')
+    EFSSERVER=$(echo $secret | jq -r '."efsserver"')
+    ADDOCKERGROUP=$(echo $secret | jq -r '."dockergroup"')
 }
 ##################################################
 ## Setup resolv.conf and also dhclient.conf ######
@@ -276,6 +293,7 @@ print_vars() {
     echo "hostname = $(hostname)"
     echo "LINUX_DISTRO = $LINUX_DISTRO"
     echo "EFSSERVER = $EFSSERVER"
+    echo "ADDOCKERGROUP = $ADDOCKERGROUP"
 }
 #########################################################
 ## Add FQDN and Hostname to Hosts file for below error ##
@@ -361,9 +379,11 @@ is_directory_reachable() {
 ## Join Linux instance to AWS Directory Service ##
 ##################################################
 do_domainjoin() {
+    echo "Attempting Domain Join"
     MAX_RETRIES=10
     for i in $(seq 1 $MAX_RETRIES)
     do
+	echo "Attempt $i"
         if [ -z "$DIRECTORY_OU" ]; then
             LOG_MSG=$(echo $DOMAIN_PASSWORD | realm join --client-software=sssd -U ${DOMAIN_USERNAME}@${DIRECTORY_NAME} "$DIRECTORY_NAME" -v 2>&1)
         else
@@ -402,6 +422,7 @@ config_nsswitch() {
 ##################################################################
 
 config_sssd() {
+	echo "Configuring SSSD"
 	sed -i 's/services = nss, pam/services = nss, pam, ssh/g' /etc/sssd/sssd.conf
 	# disabling ldap_id_mapping as we have UIDs set in AD
 	sed -i 's/ldap_id_mapping = True/ldap_id_mapping = False/g' /etc/sssd/sssd.conf
@@ -422,23 +443,31 @@ config_sssd() {
         systemctl restart sssd.service
 }
 config_autofs(){
+	echo "Configuring AutoFS"
  	sed -i	'$ a \/mnt\/nfs\/ \/etc\/auto.home --timeout=300' /etc/auto.master
 	echo "home -nfs4,rw,soft,timeo=5,intr $EFSSERVER:/" > /etc/auto.home
 	systemctl enable autofs.service
 	systemctl start autofs.service
 }
 config_docker(){
+	echo "Configuring Docker for group $ADDOCKERGROUP"
 	# Get GID of Docker Group in AD
 	DOCKERGID=$(getent group docker | cut -f3 -d:)
 	ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
+	ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
+	echo "Local Docker GID = $DOCKERGID"
+	echo "AD Docker GID = $ADDOCKERGID"
 	if [ -z $ADDOCKERGID ]
 	then
 		echo "Could not get GID for docker from AD"
 	else
 		echo "Setting docker GID to $ADDOCKERGID"
-		systemctl stop sssd.service
 		# Stop SSSD to allow groupmod to set GID to match
+                echo "Stopping SSSD and invalidating cache to allow GID match"
+		systemctl stop sssd.service
+                sss_cache -E
 		groupmod -g $ADDOCKERGID docker
+                chgrp docker /var/run/docker.sock
 		systemctl enable docker.service
 		systemctl start sssd.service
 		systemctl start docker.service
@@ -517,9 +546,6 @@ for i in "$@"; do
     esac
     shift
 done
-REALM=$(echo "$DIRECTORY_NAME" | tr [a-z] [A-Z])
-set_hostname
-configure_hosts_file
 if [ -z $REGION ]; then
     get_region
 fi
@@ -534,7 +560,12 @@ do
     fi
     sleep 30
 done
+get_serviceparams
+REALM=$(echo "$DIRECTORY_NAME" | tr [a-z] [A-Z])
+set_hostname
+configure_hosts_file
 if [ -z $DNS_IP_ADDRESS1 ] && [ -z $DNS_IP_ADDRESS2 ]; then
+    echo "Directory ID: $DIRECTORY_ID"
     DNS_ADDRESSES=$($AWSCLI ds describe-directories --region $REGION --directory-id $DIRECTORY_ID --output text | grep DNSIPADDR | awk '{print $2}')
     if [ $? -ne 0 ]; then
         echo "***Failed: DNS IPs not found" && exit 1
@@ -559,7 +590,7 @@ print_vars
 is_directory_reachable
 if [ $? -eq 0 ]; then
     config_nsswitch
-    get_servicecreds
+    #get_servicecreds
     do_domainjoin
     config_sssd
     if [ -z $EFSSERVER ]
