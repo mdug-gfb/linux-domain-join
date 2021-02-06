@@ -200,7 +200,6 @@ get_serviceparams() {
     SECRET_ID="ec2/linux/domainJoin"
     secret=$(/usr/local/bin/aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region $REGION \
               --query SecretString --output text 2>/dev/null)
-    echo "printing secret"
     DOMAIN_USERNAME=$(echo $secret | jq -r '."directory-join-user"')
     DOMAIN_PASSWORD=$(echo $secret | jq -r '."directory-join-password"')
     DIRECTORY_NAME=$(echo $secret | jq -r '."directory-name"')
@@ -337,7 +336,7 @@ EOF
 ##################################################
 is_dns_ip_reachable() {
     DNS_IP="$1"
-    ping -c 1 "$DNS_IP" 2>/dev/null
+    ping -c 1 "$DNS_IP" 1>/dev/null 2>/dev/null
     if [ $? -eq 0 ]; then
             return 0
     fi
@@ -442,7 +441,7 @@ config_docker(){
 		ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
 		STATUS=$?
 		echo "[$i] Attempting to get Docker GID from AD"
-		if [ $? -eq 0 ]
+		if [ $STATUS -eq 0 ]
 		then
 			echo "Local Docker GID = $DOCKERGID"
 			echo "AD Docker GID = $ADDOCKERGID"
@@ -452,13 +451,16 @@ config_docker(){
 			systemctl stop sssd.service > /dev/null  2>&1
 			sss_cache -E
 			groupmod -g $ADDOCKERGID docker
-			if [ -f /var/run/docker.sock ]
+			if [ -S $DOCKERSOCK ]
 			then
-				chgrp docker /var/run/docker.sock
+				chgrp docker $DOCKERSOCK
+			else
+                                echo "$DOCKERSOCK doesn't exist"
 			fi
 			systemctl enable docker.service > /dev/null  2>&1
 			systemctl start sssd.service > /dev/null  2>&1
 			systemctl start docker.service > /dev/null  2>&1
+                        break
 		fi
 		if [ -z $ADDOCKERGID ]
 		then
@@ -485,11 +487,10 @@ do
     sleep 30
 done
 get_serviceparams
-REALM=$(echo "$DIRECTORY_NAME" | tr [a-z] [A-Z])
+REALM=$(echo "Directory : $DIRECTORY_NAME" | tr [a-z] [A-Z])
 set_hostname
 configure_hosts_file
 if [ -z $DNS_IP_ADDRESS1 ] && [ -z $DNS_IP_ADDRESS2 ]; then
-    echo "Directory ID: $DIRECTORY_ID"
     DNS_ADDRESSES=$($AWSCLI ds describe-directories --region $REGION --directory-id $DIRECTORY_ID --output text | grep DNSIPADDR | awk '{print $2}')
     if [ $? -ne 0 ]; then
         echo "***Failed: DNS IPs not found" && exit 1

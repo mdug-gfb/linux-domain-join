@@ -23,4 +23,6 @@ Using SSSD to query AD for public keys (first answer)
 
 Invoke as follows
 
-\# ./domain-join.sh --directory-id \<AWS Directory ID\> --directory-name \<AD domain name\> --directory-ou \<Optional OU to use\> --efsserver \<Optional EFS Server for homedirs\> --dockergroup \<Optional AD docker group\>
+\# ./domain-join.sh 
+
+Parameters stored in AWS Secrets Manager. EC2 Instance needs to have an IAM role associated with it that retrieves those parameters from Secrets Manager
