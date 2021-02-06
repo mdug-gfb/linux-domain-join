@@ -40,9 +40,7 @@ set_hostname() {
     # https://support.microsoft.com/en-us/help/909264/naming-conventions-in-active-directory-for-computers-domains-sites-and
     PRIINT=$(route | grep '^default' | grep -o '[^ ]*$')
     echo "Primary Interface $PRIINT"
-    SUFFIX=$(ip addr show $PRIINT |grep $PRIINT$ |cut -f1 -d/ |cut -f3- -d. |sed "s/\.//g")
-    # RANDOM_COMPUTER_NAME=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1)
-    echo "Skipping urandom"
+    SUFFIX=$(ip addr show $PRIINT |grep $PRIINT$ |cut -f1 -d/ |cut -f3- -d. |sed "s/\./-/g")
     echo $HOSTNAME_PREFIX
     echo $SUFFIX
     COMPUTER_NAME=$(echo $HOSTNAME_PREFIX-$SUFFIX| tr '[:lower:]' '[:upper:]')
@@ -449,7 +447,7 @@ config_docker(){
 	do
 		echo -n "[$i] Attempting to contact domain $DIRECTORY_NAME"
 		SSSDHOST=$(getent hosts $DIRECTORY_NAME |head -n1)
-		if [ -z $SSSDHOST ]
+		if [ -z "$SSSDHOST" ]
 		then
 			echo "Could not contact $DIRECTORY_NAME."
 			if [ $i -lt $MAX_RETRIES ]
@@ -459,7 +457,10 @@ config_docker(){
 				echo " Giving Up"
 			fi
 		else
+			echo
+			echo "Contacted $DIRECTORY_NAME. Host $SSSDHOST. Getting Docker Group"
 		        ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
+			echo "AD Docker GID: $ADDOCKERGID"
 			break
 		fi
 	done
