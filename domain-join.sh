@@ -45,7 +45,7 @@ set_hostname() {
     echo "Skipping urandom"
     echo $HOSTNAME_PREFIX
     echo $SUFFIX
-    COMPUTER_NAME=$(echo $HOSTNAME-$SUFFIX^^)
+    COMPUTER_NAME=$(echo $HOSTNAME_PREFIX-$SUFFIX| tr '[:lower:]' '[:upper:]')
     echo "Setting hostname to $COMPUTER_NAME"
     HOSTNAMECTL=$(which hostnamectl)
     if [ ! -z "$HOSTNAMECTL" ]; then
@@ -449,16 +449,22 @@ config_docker(){
 		ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
 		STATUS=$?
 		echo "[$i] Attempting to get Docker GID from AD"
-		if [ $STATUS -eq 0 ]
+		if [ ! -z $ADDOCKERGID ]
 		then
 			echo "Local Docker GID = $DOCKERGID"
 			echo "AD Docker GID = $ADDOCKERGID"
 			echo "Setting docker GID to $ADDOCKERGID"
 			# Stop SSSD to allow groupmod to set GID to match
-			echo "Stopping SSSD and invalidating cache to allow GID match"
-			systemctl stop sssd.service > /dev/null  2>&1
-			sss_cache -E
-			groupmod -g $ADDOCKERGID docker
+			if [ -z $DOCKERGID ]
+			then
+				echo "Docker group doesn't exist. Creating"
+				groupadd -g $ADDOCKERGID docker
+			else
+				echo "Stopping SSSD and invalidating cache to allow GID match"
+				systemctl stop sssd.service > /dev/null  2>&1
+				sss_cache -E
+				groupmod -g $ADDOCKERGID docker
+			fi
 			if [ -S $DOCKERSOCK ]
 			then
 				chgrp docker $DOCKERSOCK
