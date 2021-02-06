@@ -486,8 +486,11 @@ do
     fi
     sleep 30
 done
+echo "Components Installed Successfully."
+echo "Getting Service Parameters"
 get_serviceparams
-REALM=$(echo "Directory : $DIRECTORY_NAME" | tr [a-z] [A-Z])
+REALM=$(echo "$DIRECTORY_NAME" | tr [a-z] [A-Z])
+echo "Settings Hostname and Updating hosts file"
 set_hostname
 configure_hosts_file
 if [ -z $DNS_IP_ADDRESS1 ] && [ -z $DNS_IP_ADDRESS2 ]; then
@@ -499,7 +502,9 @@ if [ -z $DNS_IP_ADDRESS1 ] && [ -z $DNS_IP_ADDRESS2 ]; then
     DNS_IP_ADDRESS2=$(echo $DNS_ADDRESSES | awk '{ print $2 }')
 fi
 ## Configure DNS even if DHCP option set is used.
+echo "Update DNS Config"
 do_dns_config
+echo "Allow password login via SSH"
 sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
 systemctl restart sshd
 if [ $? -ne 0 ]; then
@@ -512,6 +517,7 @@ if [ $? -ne 0 ]; then
    fi
 fi
 print_vars
+echo "Checking if directory is reachable"
 is_directory_reachable
 if [ $? -eq 0 ]; then
     config_nsswitch
