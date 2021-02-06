@@ -442,45 +442,54 @@ config_docker(){
 	echo "Configuring Docker for group $ADDOCKERGROUP"
 	# Get GID of Docker Group in AD
 	DOCKERGID=$(getent group docker | cut -f3 -d:)
-	MAX_RETRIES=5
+	ADDOCKERGID=""
+	MAX_RETRIES=10
 	DOCKERSOCK=/var/run/docker.sock
         for i in $(seq 1 $MAX_RETRIES)
 	do
-		ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
-		STATUS=$?
-		echo "[$i] Attempting to get Docker GID from AD"
-		if [ ! -z $ADDOCKERGID ]
+		echo -n "[$i] Attempting to contact domain $DIRECTORY_NAME"
+		SSSDHOST=$(getent hosts $DIRECTORY_NAME |head -n1)
+		if [ -z $SSSDHOST ]
 		then
-			echo "Local Docker GID = $DOCKERGID"
-			echo "AD Docker GID = $ADDOCKERGID"
-			echo "Setting docker GID to $ADDOCKERGID"
-			# Stop SSSD to allow groupmod to set GID to match
-			if [ -z $DOCKERGID ]
+			echo "Could not contact $DIRECTORY_NAME."
+			if [ $i -lt $MAX_RETRIES ]
 			then
-				echo "Docker group doesn't exist. Creating"
-				groupadd -g $ADDOCKERGID docker
+				echo " Retrying"
 			else
-				echo "Stopping SSSD and invalidating cache to allow GID match"
-				systemctl stop sssd.service > /dev/null  2>&1
-				sss_cache -E
-				groupmod -g $ADDOCKERGID docker
+				echo " Giving Up"
 			fi
-			if [ -S $DOCKERSOCK ]
-			then
-				chgrp docker $DOCKERSOCK
-			else
-                                echo "$DOCKERSOCK doesn't exist"
-			fi
-			systemctl enable docker.service > /dev/null  2>&1
-			systemctl start sssd.service > /dev/null  2>&1
-			systemctl start docker.service > /dev/null  2>&1
-                        break
+		else
+		        ADDOCKERGID=$(getent group $ADDOCKERGROUP | cut -f3 -d:)
+			break
 		fi
-		if [ -z $ADDOCKERGID ]
+	done
+	if [ ! -z $ADDOCKERGID ]
+	then
+		echo "Local Docker GID = $DOCKERGID"
+		echo "AD Docker GID = $ADDOCKERGID"
+		echo "Setting docker GID to $ADDOCKERGID"
+		# Stop SSSD to allow groupmod to set GID to match
+		if [ -z $DOCKERGID ]
 		then
-			echo "Failed to configure Docker for AD users"
+			echo "Docker group doesn't exist. Creating"
+			groupadd -g $ADDOCKERGID docker
+		else
+			echo "Stopping SSSD and invalidating cache to allow GID match"
+			systemctl stop sssd.service > /dev/null  2>&1
+			sss_cache -E
+			groupmod -g $ADDOCKERGID docker
 		fi
-        done
+		if [ -S $DOCKERSOCK ]
+		then
+			echo "Changing group for $DOCKERSOCK"
+			chgrp docker $DOCKERSOCK
+		fi
+		systemctl enable docker.service > /dev/null  2>&1
+		systemctl start sssd.service > /dev/null  2>&1
+		systemctl start docker.service > /dev/null  2>&1
+	else
+		echo "Failed to configure Docker for AD users"
+	fi
 }
 ##################################################
 ## Main entry point ##############################
