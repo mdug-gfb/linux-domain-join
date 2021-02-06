@@ -33,14 +33,15 @@ SECRET_ID_PREFIX="aws/directory-services"
 ## Set hostname to NETBIOS computer name #########
 ##################################################
 set_hostname() {
-    echo "Entered Hostname function"
     INSTANCE_NAME=$(hostname --short) 2>/dev/null
     echo "Current hostname : $INSTANCE_NAME"
     # NetBIOS computer names consist of up to 15 bytes of OEM characters
     # https://docs.microsoft.com/en-us/windows/win32/sysinfo/computer-names?redirectedfrom=MSDN
     # Naming conventions in Active Directory
     # https://support.microsoft.com/en-us/help/909264/naming-conventions-in-active-directory-for-computers-domains-sites-and
+    echo "Before urandom"
     RANDOM_COMPUTER_NAME=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1)
+    echo "Before random"
     COMPUTER_NAME=$(echo EC2AMAZ-$RANDOM_COMPUTER_NAME)
     echo "Setting hostname to $COMPUTER_NAME"
     HOSTNAMECTL=$(which hostnamectl)
