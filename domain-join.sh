@@ -27,8 +27,7 @@ AWSCLI="/usr/local/bin/aws"
 # Service Creds from Secrets Manager
 DOMAIN_USERNAME=""
 DOMAIN_PASSWORD=""
-# Secrets Manager Secret ID needs to be of the form aws/directory-services/d-91673491b6/seamless-domain-join
-SECRET_ID_PREFIX="aws/directory-services"
+HOSTNAME_PREFIX=""
 ##################################################
 ## Set hostname to NETBIOS computer name #########
 ##################################################
@@ -39,10 +38,14 @@ set_hostname() {
     # https://docs.microsoft.com/en-us/windows/win32/sysinfo/computer-names?redirectedfrom=MSDN
     # Naming conventions in Active Directory
     # https://support.microsoft.com/en-us/help/909264/naming-conventions-in-active-directory-for-computers-domains-sites-and
-    echo "Before urandom"
-    RANDOM_COMPUTER_NAME=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1)
-    echo "Before random"
-    COMPUTER_NAME=$(echo EC2AMAZ-$RANDOM_COMPUTER_NAME)
+    PRIINT=$(route | grep '^default' | grep -o '[^ ]*$')
+    echo "Primary Interface $PRIINT"
+    SUFFIX=$(ip addr show $PRIINT |grep $PRIINT$ |cut -f1 -d/ |cut -f3- -d. |sed "s/\.//g")
+    # RANDOM_COMPUTER_NAME=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1)
+    echo "Skipping urandom"
+    echo $HOSTNAME_PREFIX
+    echo $SUFFIX
+    COMPUTER_NAME=$(echo $HOSTNAME-$SUFFIX^^)
     echo "Setting hostname to $COMPUTER_NAME"
     HOSTNAMECTL=$(which hostnamectl)
     if [ ! -z "$HOSTNAMECTL" ]; then
@@ -211,6 +214,7 @@ get_serviceparams() {
     DIRECTORY_OU=$(echo $secret | jq -r '."directory-ou"')
     EFSSERVER=$(echo $secret | jq -r '."efsserver"')
     ADDOCKERGROUP=$(echo $secret | jq -r '."dockergroup"')
+    HOSTNAME_PREFIX=$(echo $secret | jq -r '.hostnameprefix')
 }
 ##################################################
 ## Setup resolv.conf and also dhclient.conf ######
