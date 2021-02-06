@@ -33,7 +33,9 @@ SECRET_ID_PREFIX="aws/directory-services"
 ## Set hostname to NETBIOS computer name #########
 ##################################################
 set_hostname() {
+    echo "Entered Hostname function"
     INSTANCE_NAME=$(hostname --short) 2>/dev/null
+    echo "Current hostname : $INSTANCE_NAME"
     # NetBIOS computer names consist of up to 15 bytes of OEM characters
     # https://docs.microsoft.com/en-us/windows/win32/sysinfo/computer-names?redirectedfrom=MSDN
     # Naming conventions in Active Directory
