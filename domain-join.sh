@@ -40,6 +40,7 @@ set_hostname() {
     # https://support.microsoft.com/en-us/help/909264/naming-conventions-in-active-directory-for-computers-domains-sites-and
     RANDOM_COMPUTER_NAME=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1)
     COMPUTER_NAME=$(echo EC2AMAZ-$RANDOM_COMPUTER_NAME)
+    echo "Setting hostname to $COMPUTER_NAME"
     HOSTNAMECTL=$(which hostnamectl)
     if [ ! -z "$HOSTNAMECTL" ]; then
         hostnamectl set-hostname $COMPUTER_NAME.$DIRECTORY_NAME >/dev/null
@@ -490,7 +491,7 @@ echo "Components Installed Successfully."
 echo "Getting Service Parameters"
 get_serviceparams
 REALM=$(echo "$DIRECTORY_NAME" | tr [a-z] [A-Z])
-echo "Settings Hostname and Updating hosts file"
+echo "Setting Hostname and Updating hosts file"
 set_hostname
 configure_hosts_file
 if [ -z $DNS_IP_ADDRESS1 ] && [ -z $DNS_IP_ADDRESS2 ]; then
