@@ -3,6 +3,7 @@ Shell script to join Linux to AD in AWS environment
 
 This script is modified from the AWS domain join script as part of the SSM Agent
 Using SSSD instead of Winbind
+
 The original can be found here
 
 <https://github.com/aws/amazon-ssm-agent/blob/mainline/agent/plugins/domainjoin/domainjoin_unix_script.go>
